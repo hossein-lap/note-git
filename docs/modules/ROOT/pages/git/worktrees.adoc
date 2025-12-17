@@ -1,0 +1,390 @@
+
+= git worktree and bare repos
+
+This section is a very advanced topic and is unique approach to solving some
+problems like changing branches and checking them out at the same time.
+
+In this approach, every branch is a separated directory. To changes branches
+you need to change your current *working directory* (e.g
+`cd ../<branch-name>`).
+
+.Clone bare repo
+----
+git clone --bare git@github.com:hossein-lap/blog.git blog.git
+----
+
+.Create worktree
+----
+git worktree add <branch-name>
+----
+
+.With new branch
+----
+git worktree add -b <new-branch-name> <new-directory-name>
+----
+
+.Remove worktree
+----
+git worktree remove <branch-name>
+----
+
+[IMPORTANT]
+====
+Cloning a repository bare, requires to add the `.git` at the end of URL.
+====
+
+[CAUTION]
+====
+You still can change (mess things up if you will) other branches while you are
+on a different branch. Be careful with that.
+====
+
+== Wrapper script
+
+=== Bash version
+----
+#!/usr/bin/env bash
+set -e
+
+# help function
+prompt=$(echo ${0} | awk -F '/' '{print $NF;}')
+help() {
+cat << EOF
+${prompt}: setup git worktree and bare repo
+
+usage: [-h] [-u url] [-d directory] [-a extra_args]
+
+   • arguemts:
+       -u --url      repo url (ssh)
+       -d --dir      directory name
+       -a --args     extra args (to pass to the git)
+       -h --help     print this message
+
+   • example:
+       ${prompt} -u gitlab.com:hos-workflow/scripts -d test.git -a '--depth 1'
+
+   • running without any arguments will show this message
+EOF
+}
+
+# argument parsing
+while [ "${#}" -gt 0 ]; do
+    case ${1} in
+        -u|--url)
+            input="${2}"
+            shift
+            ;;
+        -d|--directory)
+            output="${2}"
+            shift
+            ;;
+        -h|--help)
+            help
+            exit 0
+            ;;
+        -a|--args)
+            args="${args} ${2}"
+            shift
+            ;;
+        *)
+            echo "Unknown parameter passed: ${1}"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+# checking args
+if [ -z "${input}" ]; then
+    printf '%s\n\n' "No url is specified" 1>&2
+    help
+    exit 1
+fi
+
+if [ -z "${output}" ]; then
+    printf \
+        "No directory name is specified, " \
+        "Using default directory name..\n" \
+        1>&2
+    output="$(echo ${input} | awk -F '/' '{print $NF;}')"
+fi
+
+# start
+git clone ${args} --bare git@${input} ${output} 
+cd ${output}
+mkdir .bare
+mv * .bare
+echo "gitdir: ./.bare" > .git
+
+check_branch=$(git --no-pager branch | grep -v '*\|+' | awk '{print $1;}' | wc -l)
+
+if [ "${check_branch}" -gt 0 ]; then
+    for i in $(git --no-pager branch | sed 's/^[*+]/ /' | awk '{print $1;}'); do
+        git worktree add "${i}" "${i}"
+    done
+else
+	i=$(git --no-pager branch | awk '{print $NF;}')
+    git worktree add "${i}" "${i}"
+fi
+
+# git config remote.origin.url "git@${input}"
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+git fetch
+----
+
+=== Perl version
+
+[soruce,perl]
+----
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Basename;
+use Cwd;
+use File::Copy 'move';
+
+# variables
+my $input = '';
+my $output = '';
+my $args = '';
+my $sshkey = '';
+my $command_mv = 0;
+my $help = 0;
+my $prompt = basename($0);
+
+# help function
+sub print_help {
+    print <<"EOF";
+$prompt: setup git worktree and bare repo
+
+usage: [-h] [-u url] [-d directory] [-a extra_args]
+
+   • arguments:
+       -u --url      repo url (ssh)
+       -d --dir      directory name
+       -a --args     extra args (to pass to the git)
+       -h --help     print this message
+
+   • commands:
+       mv            move a bare repo with its activated worktrees
+
+   • example:
+       $prompt -u gitlab.com:hos-workflow/scripts -d test.git -a '--depth 1'
+
+   • running without any arguments will show this message
+EOF
+}
+
+# argument parsing
+GetOptions(
+    'u|url=s'      => \$input,
+    'd|dir=s'      => \$output,
+    'a|args=s'     => \$args,
+    'k|sshkey=s'   => \$sshkey,
+    'h|help'       => \$help,
+    'mv'           => \$command_mv,  # WIP
+) or die "Error in command line arguments. Use -h for help.\n";
+
+# # WIP {{{
+# # get list of directories
+# sub dirlist {
+#     my $path = $_[0];
+#     $path =~ s,/$,,;
+#     # print("dirlist: $path\n");
+#     # system("ls $path");
+#     die "Please specify which directory to search" unless -d $path;
+#     my @dirs;
+#     opendir (my $dir, $path);
+#     while (my $entry = readdir $dir) {
+#         next unless -d $path . '/' . $entry;
+#         next if $entry eq '.' or $entry eq '..';
+#         # print "\tdirlist: $entry\n";
+#         unless ($entry =~ /^.bare/) {
+#             push(@dirs, $entry)
+#         }
+#     }
+#     return @dirs;
+#     closedir $dir;
+# }
+#
+# sub fixgitdir {
+#     my $path_read = $_[0];
+#     my $path_write = $_[1];
+#     # my $base_read = $_[2];
+#     # my $base_write = $_[3];
+#     my $source = dirname($_[2]);
+#     my $dest = dirname($_[3]);
+#     open(INFO, '<' . $path_read) or die "Error opening $path_read: $!\n";
+#     open(OUT, '>' . $path_write) or die "Error writing $path_write $!\n";
+#
+#     # print("$path_read -> $path_write\n");
+#
+#     foreach my $line (<INFO>) {
+#
+#         # chomp($line);
+#
+#         # # print("i:        $path_read\n");
+#         # # print("  $line\n");
+#         # print("$line\n");
+#         # $line =~ s,$source,$dest,g;
+#         # print("$line\n");
+#         # # print("o:        $path_write\n");
+#         # # print("  $line\n");
+#
+#         print(OUT "$line");
+#
+#         # print("I: gitdir: $source\n");
+#         # print("O: gitdir: $dest\n");
+#
+#     }
+#     close(INFO);
+#     close(OUT);
+# }
+# # }}}
+
+# start
+
+# help flag has highest priority
+if ($help || !$input) {
+    print_help();
+    exit($help ? 0 : 1);
+}
+
+# WIP {{{
+if ($command_mv) {
+    my $file_source = $ARGV[0];
+    my $file_dest = $ARGV[1];
+    $file_dest =~ s,/$,,;
+    $file_source =~ s,/$,,;
+    my $file_source_base = basename($file_source);
+    my $file_dest_base = basename($file_dest);
+    my $file_source_dir = dirname($file_source);
+    my $file_dest_dir = dirname($file_dest);
+    my $file_name = basename($file_source);
+
+    # move($file_source, $file_dest) or die("Cannot move $file_source to $file_dest\n");
+
+    # # this is working as intended, just implement the thing
+    # # check if the basenames are the same or not
+    # if ($file_source_base eq $file_dest_base) {
+    #     print("dirname is included\n");
+    # } else {
+    #     print("dirname is NOT included\n");
+    # }
+
+    my $file_dest_dir_bare = $file_dest."/.bare/worktrees";
+    # my $file_dest_dir_worktree = $file_dest."/.bare/worktrees";
+
+    # print("$file_dest_dir_bare\n");
+    # print("$file_dest_dir_worktree\n");
+
+    # print("[baredir]\n");
+    # my @dirs_bare = dirlist($file_dest_dir_bare);
+    # foreach my $dir (@dirs_bare) {
+    #     my $branch_name = "$file_dest_dir_bare/$dir";
+    #     print("$branch_name\n");
+    #     system("cat $branch_name/gitdir");
+    #     # fixgitdir("$branch_name/gitdir", $file_source, $file_dest);
+    # }
+    # print("=========\n");
+
+    # print("\n");
+
+    # my $file_dest_dir_worktree = $file_dest."/.bare/worktrees";
+
+    print("[worktrees]\n");
+    my @dirs_worktree = dirlist($file_dest);
+    for my $dir (@dirs_worktree) {
+        my $branch_read = "$file_source/$dir";
+        my $branch_write = "$file_dest/$dir";
+        my $expand = ".git";
+    print("=========\n");
+    print("=========\n");
+    print("=========\n");
+        print("dir: $dir\n");
+        print("fsr: $file_source\n");
+        print("fds: $file_dest\n");
+        print("brr: $branch_read\n");
+        print("brw: $branch_write\n");
+        print("exp: $expand\n");
+    print("=========\n");
+    print("=========\n");
+    print("=========\n");
+        # fixgitdir("$branch_read/$expand", "$branch_write/$expand", $file_source, $file_dest);
+    }
+    print("=========\n");
+
+    print("[basedir]\n");
+    my @dirs_bare = dirlist($file_dest."/.bare/worktrees");
+    for my $dir (@dirs_bare) {
+        my $expand = ".bare/worktrees";
+        my $branch_read = "$file_source/$expand/$dir/gitdir";
+        my $branch_write = "$file_dest/$expand/$dir/gitdir";
+        fixgitdir("$branch_read", "$branch_write", $file_source, $file_dest);
+    }
+    print("=========\n");
+
+    # my @dirs_bare = dirlist($file_dest_dir_worktree);
+    # foreach my $dir (@dirs_bare) {
+    #     my $branch_name = "$file_dest_dir_worktree/$dir\n";
+    #     print("$branch_name");
+    # }
+
+    exit 0;
+}
+# }}}
+
+# checking args
+if ($input =~ /https:/) {
+    my @_tmp = split("/", $input, 4);
+    $input = "git\@$_tmp[2]:$_tmp[3]";
+}
+
+unless ($input =~ /git@/) {
+    $input = 'git@'.$input;
+}
+
+unless ($output) {
+    print("No directory name is specified, Using default directory name, ");
+    ($output) = $input =~ m{([^/]+)$};
+}
+
+my $ssh_prefix = $sshkey ? "GIT_SSH_COMMAND='ssh -i $sshkey'" : '';
+my $clone_cmd = "$ssh_prefix git clone $args --bare $input $output";
+system($clone_cmd) == 0 or die "Failed to clone repository\n";
+system("cd $output; git config core.sshCommand 'ssh -i $ssh_prefix'; cd -") if $ssh_prefix;
+
+chdir $output or die "Cannot change directory to $output: $!\n";
+mkdir ".bare" or die "Cannot create .bare directory: $!\n";
+system("mv * .bare") == 0 or die "Failed to move contents to .bare\n";
+open my $gitfile, '>', '.git' or die "Cannot open .git file: $!\n";
+print $gitfile "gitdir: ./.bare\n";
+close $gitfile;
+
+my @branches = `git --no-pager branch`;
+chomp @branches;
+# @branches = grep { $_ !~ /^[*+]/ } @branches;
+@branches = map { s/^\**\s*//r } @branches;
+
+if (@branches) {
+    foreach my $branch (@branches) {
+        # print("\$ git worktree add '$branch' '$branch'\n");
+        system("git worktree add '$branch' '$branch'") == 0 or warn "Failed to add worktree for $branch\n";
+    }
+}
+
+# system("git config remote.origin.url 'git@${input}'") == 0 or warn "Failed to set origin url\n";
+system("git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'") == 0 or warn "Failed to set fetch config\n";
+system("git fetch") == 0 or warn "Failed to fetch from remote\n";
+----
+
+[NOTE]
+====
+This is the old version of my `gbr` wrapper script. I've been adding and
+removing features. You can take a look at the current state of the script in
+github
+link::https://github.com/hossein-lap/git-worktree[hossein-lap/git-worktree] if
+you are interested.
+====

@@ -1,2 +1,3 @@
-* xref:git/index.adoc[Git]
+* xref:git/basic.adoc[Basic Usage]
+* xref:git/worktrees.adoc[Bare repo and Worktrees]
 
