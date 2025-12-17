@@ -134,7 +134,7 @@ git fetch
 
 === Perl version
 
-[soruce,perl]
+[source,perl]
 ----
 #!/usr/bin/env perl
 
@@ -385,6 +385,6 @@ system("git fetch") == 0 or warn "Failed to fetch from remote\n";
 This is the old version of my `gbr` wrapper script. I've been adding and
 removing features. You can take a look at the current state of the script in
 github
-link::https://github.com/hossein-lap/git-worktree[hossein-lap/git-worktree] if
+https://github.com/hossein-lap/git-worktree[hossein-lap/git-worktree] if
 you are interested.
 ====
