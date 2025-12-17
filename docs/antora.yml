@@ -1,6 +1,6 @@
 name: git-tool
-version: ~
+version: 0.1.0
 title: Git Version Control System
-start_page: hos-docs::index.adoc
+start_page: index.adoc
 nav:
 - modules/ROOT/nav.adoc
