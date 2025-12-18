@@ -1,4 +1,4 @@
-name: git-tool
+name: tool-git
 version: 0.1.0
 title: Git Version Control System
 start_page: index.adoc
